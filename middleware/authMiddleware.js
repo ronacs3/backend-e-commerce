@@ -1,6 +1,15 @@
 const jwt = require("jsonwebtoken");
 const User = require("../models/userModel");
 
+const admin = (req, res, next) => {
+  if (req.user && req.user.isAdmin) {
+    next(); // Là admin -> Cho qua
+  } else {
+    res.status(401);
+    throw new Error("Không có quyền Admin"); // Chặn lại
+  }
+};
+
 const protect = async (req, res, next) => {
   let token;
 
@@ -28,4 +37,4 @@ const protect = async (req, res, next) => {
   }
 };
 
-module.exports = { protect };
+module.exports = { protect, admin };
