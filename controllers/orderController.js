@@ -44,4 +44,13 @@ const getOrders = async (req, res) => {
   res.json(orders);
 };
 
-module.exports = { addOrderItems, getOrders };
+// @desc    Lấy danh sách đơn hàng của user đang login
+// @route   GET /api/orders/myorders
+// @access  Private
+const getMyOrders = async (req, res) => {
+  // Tìm order có field 'user' trùng với ID người đang login
+  const orders = await Order.find({ user: req.user._id });
+  res.json(orders);
+};
+
+module.exports = { addOrderItems, getOrders, getMyOrders };
