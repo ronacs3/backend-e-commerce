@@ -6,17 +6,28 @@ const {
   deleteProduct,
   updateProduct,
   createProduct,
+  getRelatedProducts,
+  createProductReview,
+  getProductCategories, // <--- Đừng quên import hàm này (đã làm ở các bước trước)
 } = require("../controllers/productController");
 const { protect, admin } = require("../middleware/authMiddleware");
 
-// Route gốc: Ai cũng xem được (GET), nhưng chỉ Admin mới được tạo (POST)
-router.route("/").get(getProducts).post(protect, admin, createProduct);
+// 1. Route gốc: Lấy tất cả & Tạo mới
+router.route("/").get(getProducts).post(protect, admin, createProduct); // Đã có protect (lấy req.user) và admin (check quyền)
 
-// Route theo ID: Ai cũng xem chi tiết được (GET), nhưng chỉ Admin mới được Xóa/Sửa
+// 2. Route lấy danh sách danh mục (QUAN TRỌNG: Phải đặt trước /:id)
+// Nếu đặt sau, code sẽ tưởng "categories" là một cái ID sản phẩm
+router.route("/categories").get(getProductCategories);
+
+// 3. Các route con cụ thể của sản phẩm
+router.route("/:id/related").get(getRelatedProducts);
+router.route("/:id/reviews").post(protect, createProductReview);
+
+// 4. Route theo ID (Luôn đặt cuối cùng trong nhóm)
 router
   .route("/:id")
   .get(getProductById)
-  .delete(protect, admin, deleteProduct)
-  .put(protect, admin, updateProduct);
+  .put(protect, admin, updateProduct)
+  .delete(protect, admin, deleteProduct);
 
 module.exports = router;
