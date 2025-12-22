@@ -288,6 +288,54 @@ const cancelOrder = async (req, res) => {
 
   res.json({ message: "Đã hủy đơn hàng", order: updatedOrder });
 };
+
+// @desc    Lấy thống kê Dashboard (Admin)
+// @route   GET /api/orders/stats
+// @access  Private/Admin
+const getOrderStats = asyncHandler(async (req, res) => {
+  // 1. THỐNG KÊ DOANH THU 7 NGÀY GẦN NHẤT
+  const last7Days = new Date();
+  last7Days.setDate(last7Days.getDate() - 7);
+
+  const dailyOrders = await Order.aggregate([
+    { $match: { createdAt: { $gte: last7Days } } }, // Lọc đơn 7 ngày qua
+    {
+      $group: {
+        _id: { $dateToString: { format: "%Y-%m-%d", date: "$createdAt" } },
+        totalSales: { $sum: "$totalPrice" },
+        count: { $sum: 1 },
+      },
+    },
+    { $sort: { _id: 1 } }, // Sắp xếp theo ngày tăng dần
+  ]);
+
+  // 2. TỶ LỆ TRẠNG THÁI ĐƠN HÀNG (Đã thanh toán / Chưa thanh toán)
+  const statusStats = await Order.aggregate([
+    {
+      $group: {
+        _id: "$isPaid",
+        count: { $sum: 1 },
+      },
+    },
+  ]);
+
+  // 3. TOP 5 SẢN PHẨM BÁN CHẠY
+  const topProducts = await Order.aggregate([
+    { $unwind: "$orderItems" }, // Tách mảng orderItems ra từng dòng
+    {
+      $group: {
+        _id: "$orderItems.product",
+        name: { $first: "$orderItems.name" },
+        totalQty: { $sum: "$orderItems.qty" },
+      },
+    },
+    { $sort: { totalQty: -1 } }, // Sắp xếp giảm dần theo số lượng
+    { $limit: 5 }, // Lấy 5 sp đầu
+  ]);
+
+  res.json({ dailyOrders, statusStats, topProducts });
+});
+
 module.exports = {
   addOrderItems,
   getOrders,
@@ -296,4 +344,5 @@ module.exports = {
   getOrderById,
   updateOrderToPaid,
   cancelOrder,
+  getOrderStats,
 };
