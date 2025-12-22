@@ -1,5 +1,8 @@
 const User = require("../models/userModel");
 const generateToken = require("../utils/generateToken");
+const sendEmail = require("../utils/sendEmail");
+const crypto = require("crypto");
+const asyncHandler = require("express-async-handler");
 
 // @desc    Đăng ký người dùng mới
 // @route   POST /api/users
@@ -19,6 +22,18 @@ const registerUser = async (req, res) => {
   });
 
   if (user) {
+    // --- GỬI MAIL CHÀO MỪNG ---
+    try {
+      await sendEmail({
+        email: user.email,
+        subject: "Chào mừng đến với E-Commerce Shop!",
+        html: `<h3>Xin chào ${user.name},</h3>
+                 <p>Cảm ơn bạn đã đăng ký tài khoản. Chúc bạn mua sắm vui vẻ!</p>`,
+      });
+    } catch (error) {
+      console.error("Lỗi gửi mail:", error);
+    }
+    // --------------------------
     res.status(201).json({
       _id: user._id,
       name: user.name,
@@ -126,6 +141,92 @@ const updateUserProfile = async (req, res) => {
   }
 };
 
+// @desc    Quên mật khẩu (Gửi link reset)
+// @route   POST /api/users/forgot-password
+// @access  Public
+const forgotPassword = asyncHandler(async (req, res) => {
+  const { email } = req.body;
+  const user = await User.findOne({ email });
+
+  if (!user) {
+    res.status(404);
+    throw new Error("Không tìm thấy Email này");
+  }
+
+  // Tạo token reset ngẫu nhiên
+  const resetToken = crypto.randomBytes(20).toString("hex");
+
+  // Hash token để lưu vào DB (Bảo mật)
+  user.resetPasswordToken = crypto
+    .createHash("sha256")
+    .update(resetToken)
+    .digest("hex");
+  user.resetPasswordExpire = Date.now() + 10 * 60 * 1000; // Hết hạn sau 10 phút
+
+  await user.save();
+
+  // Tạo link reset (Trỏ về Frontend)
+  // Ví dụ Frontend chạy localhost:3000
+  const resetUrl = `${process.env.FRONTEND_URL}/reset-password/${resetToken}`;
+
+  const message = `
+      <h1>Yêu cầu đặt lại mật khẩu</h1>
+      <p>Vui lòng click vào link bên dưới để đặt lại mật khẩu:</p>
+      <a href="${resetUrl}" clicktracking=off>${resetUrl}</a>
+      <p>Link này sẽ hết hạn sau 10 phút.</p>
+  `;
+
+  try {
+    await sendEmail({
+      email: user.email,
+      subject: "Đặt lại mật khẩu E-Commerce",
+      html: message,
+    });
+
+    res.json({ success: true, data: "Đã gửi email hướng dẫn!" });
+  } catch (error) {
+    user.resetPasswordToken = undefined;
+    user.resetPasswordExpire = undefined;
+    await user.save();
+    res.status(500);
+    throw new Error("Không thể gửi email");
+  }
+});
+
+// @desc    Đặt lại mật khẩu mới
+// @route   PUT /api/users/reset-password/:token
+// @access  Public
+const resetPassword = asyncHandler(async (req, res) => {
+  // 1. Hash token từ URL để so sánh với token trong DB
+  const resetPasswordToken = crypto
+    .createHash("sha256")
+    .update(req.params.token)
+    .digest("hex");
+
+  // 2. Tìm user có token đó và chưa hết hạn
+  const user = await User.findOne({
+    resetPasswordToken,
+    resetPasswordExpire: { $gt: Date.now() },
+  });
+
+  if (!user) {
+    res.status(400);
+    throw new Error("Token không hợp lệ hoặc đã hết hạn");
+  }
+
+  // 3. Cập nhật mật khẩu mới
+  user.password = req.body.password;
+
+  // 4. Xóa token reset đi
+  user.resetPasswordToken = undefined;
+  user.resetPasswordExpire = undefined;
+
+  // 5. Lưu lại (Middleware pre-save sẽ tự hash password mới)
+  await user.save();
+
+  res.json({ message: "Đổi mật khẩu thành công" });
+});
+
 module.exports = {
   registerUser,
   authUser,
@@ -133,4 +234,6 @@ module.exports = {
   updateUserProfile,
   getUsers,
   deleteUser,
+  forgotPassword,
+  resetPassword,
 };

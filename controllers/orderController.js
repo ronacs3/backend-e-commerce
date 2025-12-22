@@ -2,6 +2,7 @@ const Order = require("../models/orderModel");
 const Product = require("../models/productModel");
 const asyncHandler = require("express-async-handler");
 const Coupon = require("../models/couponModel");
+const sendEmail = require("../utils/sendEmail");
 
 // @desc    Tạo đơn hàng mới (Full logic: Check kho, Tính giá, Coupon, Trừ kho)
 // @route   POST /api/orders
@@ -97,7 +98,54 @@ const addOrderItems = asyncHandler(async (req, res) => {
       product.countInStock -= item.qty;
       await product.save();
     }
+    if (createdOrder) {
+      // Tạo bảng danh sách sản phẩm bằng HTML
+      const itemsHtml = createdOrder.orderItems
+        .map(
+          (item) => `
+          <tr>
+              <td style="border: 1px solid #ddd; padding: 8px;">${
+                item.name
+              }</td>
+              <td style="border: 1px solid #ddd; padding: 8px;">${item.qty}</td>
+              <td style="border: 1px solid #ddd; padding: 8px;">${item.price.toLocaleString(
+                "vi-VN"
+              )} đ</td>
+          </tr>
+      `
+        )
+        .join("");
 
+      const emailContent = `
+          <h2>Cảm ơn bạn đã đặt hàng!</h2>
+          <p>Mã đơn hàng: <strong>${createdOrder._id}</strong></p>
+          <table style="border-collapse: collapse; width: 100%;">
+              <thead>
+                  <tr style="background-color: #f2f2f2;">
+                      <th style="border: 1px solid #ddd; padding: 8px;">Sản phẩm</th>
+                      <th style="border: 1px solid #ddd; padding: 8px;">Số lượng</th>
+                      <th style="border: 1px solid #ddd; padding: 8px;">Giá</th>
+                  </tr>
+              </thead>
+              <tbody>${itemsHtml}</tbody>
+          </table>
+          <h3>Tổng tiền: ${createdOrder.totalPrice.toLocaleString(
+            "vi-VN"
+          )} đ</h3>
+          <p>Chúng tôi sẽ sớm giao hàng cho bạn.</p>
+      `;
+
+      try {
+        // Lấy email user từ req.user (vì đã qua middleware auth)
+        await sendEmail({
+          email: req.user.email,
+          subject: `Xác nhận đơn hàng #${createdOrder._id}`,
+          html: emailContent,
+        });
+      } catch (error) {
+        console.error("Lỗi gửi mail đơn hàng:", error);
+      }
+    }
     res.status(201).json(createdOrder);
   }
 });
@@ -149,6 +197,19 @@ const updateOrderToDelivered = async (req, res) => {
     order.deliveredAt = Date.now();
 
     const updatedOrder = await order.save();
+    // --- GỬI MAIL THÔNG BÁO GIAO HÀNG ---
+    try {
+      await sendEmail({
+        email: order.user.email,
+        subject: `Đơn hàng #${order._id} đã được giao thành công`,
+        html: `<h3>Xin chào ${order.user.name},</h3>
+                 <p>Đơn hàng <strong>${order._id}</strong> của bạn đã được giao thành công.</p>
+                 <p>Hãy đánh giá sản phẩm để nhận ưu đãi cho lần mua tiếp theo nhé!</p>`,
+      });
+    } catch (error) {
+      console.error(error);
+    }
+    // ------------------------------------
     res.json(updatedOrder);
   } else {
     res.status(404);

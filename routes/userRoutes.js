@@ -7,6 +7,8 @@ const {
   getUsers, // <--- Import mới
   deleteUser, // <--- Import mới
   updateUserProfile,
+  forgotPassword,
+  resetPassword,
 } = require("../controllers/userController");
 const { protect, admin } = require("../middleware/authMiddleware");
 
@@ -20,5 +22,7 @@ router
   .put(protect, updateUserProfile);
 // Route xóa user theo ID
 router.route("/:id").delete(protect, admin, deleteUser);
+router.post("/forgot-password", forgotPassword);
+router.put("/reset-password/:token", resetPassword); // <--- Route mới
 
 module.exports = router;

@@ -1,9 +1,11 @@
 const mongoose = require("mongoose");
 const dotenv = require("dotenv");
-const users = require("./data/users");
-const products = require("./data/products");
+const colors = require("colors");
+const users = require("./data/users"); // Data mẫu user
+const products = require("./data/products"); // Data mẫu products
 const User = require("./models/userModel");
 const Product = require("./models/productModel");
+const Order = require("./models/orderModel");
 const connectDB = require("./config/db");
 
 dotenv.config();
@@ -11,46 +13,52 @@ connectDB();
 
 const importData = async () => {
   try {
-    // 1. Xóa dữ liệu cũ
+    // Xóa dữ liệu cũ
+    await Order.deleteMany();
     await Product.deleteMany();
     await User.deleteMany();
 
-    // 2. Thêm Users vào DB
-    const createdUsers = await User.insertMany(users);
+    // --- SỬA ĐOẠN NÀY ---
+    // Thay vì dùng User.insertMany(users), ta dùng vòng lặp để tạo từng user
+    // Điều này giúp kích hoạt middleware pre('save') để mã hóa password
 
-    // 3. Lấy ID của user đầu tiên (Admin) để gán cho sản phẩm (nếu cần mở rộng sau này)
-    const adminUser = createdUsers[0]._id;
+    const createdUsers = [];
+    for (const user of users) {
+      const createdUser = await User.create(user);
+      createdUsers.push(createdUser);
+    }
+    // --------------------
 
-    // Map thêm field user vào từng sản phẩm (Optional: Nếu model Product bạn chưa có field user thì nó sẽ bỏ qua)
+    const adminUser = createdUsers[0]._id; // Lấy ID admin (người đầu tiên trong list)
+
     const sampleProducts = products.map((product) => {
       return { ...product, user: adminUser };
     });
 
-    // 4. Thêm Products vào DB
     await Product.insertMany(sampleProducts);
 
-    console.log("Đã nhập dữ liệu thành công!");
+    console.log("Data Imported!".green.inverse);
     process.exit();
   } catch (error) {
-    console.error(`Lỗi: ${error}`);
+    console.error(`${error}`.red.inverse);
     process.exit(1);
   }
 };
 
 const destroyData = async () => {
   try {
+    await Order.deleteMany();
     await Product.deleteMany();
     await User.deleteMany();
 
-    console.log("Đã xóa sạch dữ liệu!");
+    console.log("Data Destroyed!".red.inverse);
     process.exit();
   } catch (error) {
-    console.error(`Lỗi: ${error}`);
+    console.error(`${error}`.red.inverse);
     process.exit(1);
   }
 };
 
-// Kiểm tra tham số dòng lệnh để chọn chạy hàm nào
 if (process.argv[2] === "-d") {
   destroyData();
 } else {
