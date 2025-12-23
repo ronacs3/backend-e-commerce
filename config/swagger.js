@@ -52,7 +52,7 @@ const options = {
             comment: { type: "string", example: "Sản phẩm dùng rất tốt!" },
           },
         },
-        // --- 3. COUPON SCHEMA (MỚI) ---
+        // --- 3. COUPON SCHEMA ---
         Coupon: {
           type: "object",
           properties: {
@@ -84,7 +84,7 @@ const options = {
                 properties: {
                   product: { type: "string", example: "65a1b2c3d4..." },
                   qty: { type: "number", example: 2 },
-                  category: { type: "string", example: "Điện thoại" }, // Cần field này để check coupon
+                  category: { type: "string", example: "Điện thoại" },
                 },
               },
             },
@@ -104,11 +104,63 @@ const options = {
             couponCode: { type: "string", example: "SALE50" },
           },
         },
+        // --- 5. AI CHAT SCHEMA (MỚI THÊM) ---
+        ChatRequest: {
+          type: "object",
+          required: ["message"],
+          properties: {
+            message: {
+              type: "string",
+              example:
+                "Tư vấn cho tôi một chiếc điện thoại dưới 10 triệu để chơi game",
+            },
+          },
+        },
+        ChatResponse: {
+          type: "object",
+          properties: {
+            reply: {
+              type: "string",
+              example:
+                "Chào bạn, với tầm giá 10 triệu bạn có thể tham khảo dòng Xiaomi 13T...",
+            },
+          },
+        },
       },
     },
 
     // --- ĐỊNH NGHĨA CÁC API ENDPOINTS ---
     paths: {
+      // ================= AI CHAT (MỚI THÊM) =================
+      "/api/chat": {
+        post: {
+          summary: "Chat với trợ lý ảo AI (Gemini)",
+          tags: ["AI Chat"],
+          description:
+            "Gửi câu hỏi về sản phẩm hoặc tư vấn mua sắm. Hệ thống sẽ tự động thử lại nếu AI bận.",
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/ChatRequest" },
+              },
+            },
+          },
+          responses: {
+            200: {
+              description: "AI trả lời thành công",
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/ChatResponse" },
+                },
+              },
+            },
+            400: { description: "Thiếu nội dung câu hỏi" },
+            503: { description: "AI Server quá tải hoặc đang bảo trì" },
+          },
+        },
+      },
+
       // ================= PRODUCTS =================
       "/api/products": {
         get: {
