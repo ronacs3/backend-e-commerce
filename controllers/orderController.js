@@ -180,11 +180,15 @@ const getOrderById = async (req, res) => {
 // @desc    Lấy danh sách đơn hàng của user đang login
 // @route   GET /api/orders/myorders
 // @access  Private
-const getMyOrders = async (req, res) => {
-  // Tìm order có field 'user' trùng với ID người đang login
+const getMyOrders = asyncHandler(async (req, res) => {
+  if (!req.user) {
+    res.status(401);
+    throw new Error("Chưa đăng nhập");
+  }
+
   const orders = await Order.find({ user: req.user._id });
   res.json(orders);
-};
+});
 
 // @desc    Cập nhật trạng thái đã giao hàng
 // @route   PUT /api/orders/:id/deliver
