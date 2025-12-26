@@ -1,6 +1,13 @@
 const asyncHandler = require("express-async-handler"); // Import cái này để bắt lỗi tự động
 const Product = require("../models/productModel");
 const Order = require("../models/orderModel");
+const { GoogleGenerativeAI } = require("@google/generative-ai");
+
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+
+const model = genAI.getGenerativeModel({
+  model: "gemini-2.5-flash",
+});
 // @desc    Lấy danh sách tất cả danh mục
 // @route   GET /api/products/categories
 // @access  Public
@@ -12,27 +19,33 @@ const getProductCategories = asyncHandler(async (req, res) => {
 // @desc    Lấy tất cả sản phẩm (Có tìm kiếm & Lọc danh mục)
 // @route   GET /api/products
 // @access  Public
+// Backend Controller (Ví dụ)
 const getProducts = asyncHandler(async (req, res) => {
-  // 1. Logic tìm kiếm từ khóa (keyword)
-  const keyword = req.query.keyword
-    ? {
-        name: {
-          $regex: req.query.keyword,
-          $options: "i",
-        },
-      }
-    : {};
+  // 1. Thay đổi cách lấy tham số
+  const { keyword, category, minPrice, maxPrice } = req.query; // <--- SỬA Ở ĐÂY
 
-  // 2. Logic lọc theo danh mục (category)
-  const category = req.query.category
-    ? {
-        category: req.query.category,
-      }
-    : {};
+  let query = {};
 
-  // 3. Kết hợp điều kiện
-  const products = await Product.find({ ...keyword, ...category });
+  if (keyword) {
+    query.name = { $regex: keyword, $options: "i" };
+  }
 
+  if (category) {
+    query.category = category;
+  }
+
+  // 2. Logic lọc giá mới (Dễ hiểu hơn)
+  if (minPrice || maxPrice) {
+    query.price = {};
+    if (minPrice) {
+      query.price.$gte = Number(minPrice);
+    }
+    if (maxPrice) {
+      query.price.$lte = Number(maxPrice);
+    }
+  }
+
+  const products = await Product.find(query).sort({ createdAt: -1 });
   res.json(products);
 });
 
@@ -195,6 +208,85 @@ const createProductReview = asyncHandler(async (req, res) => {
   }
 });
 
+/**
+ * @desc    So sánh sản phẩm bằng AI (Gemini)
+ * @route   POST /api/products/compare-ai
+ * @access  Public
+ */
+const compareProductsAI = asyncHandler(async (req, res) => {
+  const { products } = req.body;
+
+  if (!Array.isArray(products) || products.length < 2) {
+    res.status(400);
+    throw new Error("Cần ít nhất 2 sản phẩm để so sánh");
+  }
+
+  // 1️⃣ Giới hạn số sản phẩm
+  const safeProducts = products.slice(0, 4);
+
+  // 2️⃣ Tạo context an toàn (chống XSS)
+  const productDetails = safeProducts
+    .map((p, index) => {
+      return `
+Sản phẩm ${index + 1}:
+- Tên: ${escape(p.name)}
+- Giá: ${Number(p.price).toLocaleString("vi-VN")} VND
+- Danh mục: ${escape(p.category)}
+- Mô tả: ${escape(p.description || "Không có mô tả")}
+- Tồn kho: ${p.countInStock}
+`;
+    })
+    .join("\n");
+
+  // 3️⃣ Prompt rõ ràng – ép Gemini trả HTML thuần
+  const prompt = `
+Bạn là chuyên gia tư vấn mua sắm.
+
+Hãy so sánh ${safeProducts.length} sản phẩm sau dựa trên dữ liệu được cung cấp:
+${productDetails}
+
+YÊU CẦU BẮT BUỘC:
+- CHỈ trả về HTML thuần
+- KHÔNG markdown
+- KHÔNG dùng <html>, <body>
+- CHỈ dùng các thẻ: <div>, <p>, <strong>, <ul>, <li>
+
+Cấu trúc:
+<div>
+  <p><strong>Điểm giống nhau:</strong> ...</p>
+  <p><strong>Điểm khác biệt chính:</strong> ...</p>
+  <div class="alert">
+    <strong>Lời khuyên:</strong> Ai nên mua sản phẩm nào? Vì sao?
+  </div>
+</div>
+
+Giọng văn khách quan, súc tích, dễ hiểu cho người mua hàng.
+`;
+
+  try {
+    // 4️⃣ Gọi Gemini
+    const result = await model.generateContent({
+      contents: [
+        {
+          role: "user",
+          parts: [{ text: prompt }],
+        },
+      ],
+    });
+
+    let html = result.response.text();
+
+    // 5️⃣ Phòng trường hợp Gemini bọc ```html
+    html = html.replace(/```html|```/g, "").trim();
+
+    res.json({ result: html });
+  } catch (error) {
+    console.error("Gemini AI error:", error);
+    res.status(500);
+    throw new Error("Lỗi khi gọi Gemini AI so sánh sản phẩm");
+  }
+});
+
 module.exports = {
   getProducts,
   getProductById,
@@ -204,4 +296,5 @@ module.exports = {
   getRelatedProducts,
   createProductReview,
   getProductCategories,
+  compareProductsAI,
 };
