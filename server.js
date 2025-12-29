@@ -27,7 +27,15 @@ connectDB();
 
 const app = express();
 
-app.use(cors());
+app.use(
+  cors({
+    origin: [
+      "http://localhost:5000",
+      "https://techshopnibi.name.vn", // <--- THÊM DÒNG NÀY
+    ],
+    credentials: true,
+  })
+);
 app.use(express.json());
 
 // 2. Routes
