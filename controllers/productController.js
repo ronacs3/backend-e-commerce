@@ -2,6 +2,7 @@ const asyncHandler = require("express-async-handler"); // Import cái này để
 const Product = require("../models/productModel");
 const Order = require("../models/orderModel");
 const { GoogleGenerativeAI } = require("@google/generative-ai");
+const Category = require("../models/categoryModel");
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
@@ -21,34 +22,40 @@ const getProductCategories = asyncHandler(async (req, res) => {
 // @access  Public
 // Backend Controller (Ví dụ)
 const getProducts = asyncHandler(async (req, res) => {
-  // 1. Thay đổi cách lấy tham số
-  const { keyword, category, minPrice, maxPrice } = req.query; // <--- SỬA Ở ĐÂY
+  const query = {};
 
-  let query = {};
-
-  if (keyword) {
-    query.name = { $regex: keyword, $options: "i" };
+  /* ===== KEYWORD ===== */
+  if (req.query.keyword) {
+    query.name = {
+      $regex: req.query.keyword,
+      $options: "i",
+    };
   }
 
-  if (category) {
-    query.category = category;
+  /* ===== CATEGORY (NAME → ObjectId) ===== */
+  if (req.query.category) {
+    const category = await Category.findOne({
+      name: req.query.category,
+    });
+
+    if (category) {
+      query.category = category.name;
+    }
   }
 
-  // 2. Logic lọc giá mới (Dễ hiểu hơn)
-  if (minPrice || maxPrice) {
+  /* ===== PRICE ===== */
+  if (req.query.min || req.query.max) {
     query.price = {};
-    if (minPrice) {
-      query.price.$gte = Number(minPrice);
-    }
-    if (maxPrice) {
-      query.price.$lte = Number(maxPrice);
-    }
+    if (req.query.min) query.price.$gte = Number(req.query.min);
+    if (req.query.max) query.price.$lte = Number(req.query.max);
   }
 
-  const products = await Product.find(query).sort({ createdAt: -1 });
+  const products = await Product.find(query)
+    .populate("category", "name")
+    .sort({ createdAt: -1 });
+
   res.json(products);
 });
-
 // @desc    Lấy 1 sản phẩm theo ID
 // @route   GET /api/products/:id
 // @access  Public

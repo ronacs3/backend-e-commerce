@@ -21,7 +21,7 @@ const createCategory = async (req, res) => {
 // @route   GET /api/categories
 // @access  Public
 const getCategories = async (req, res) => {
-  const categories = await Category.find({});
+  const categories = await Category.find().sort({ name: 1 });
   res.json(categories);
 };
 
