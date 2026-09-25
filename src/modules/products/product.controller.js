@@ -1,8 +1,8 @@
 const asyncHandler = require("express-async-handler"); // Import cái này để bắt lỗi tự động
-const Product = require("../models/productModel");
-const Order = require("../models/orderModel");
+const Product = require("./product.model");
+const Order = require("../orders/order.model");
 const { GoogleGenerativeAI } = require("@google/generative-ai");
-const Category = require("../models/categoryModel");
+const Category = require("../categories/category.model");
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 

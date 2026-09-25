@@ -5,8 +5,8 @@ const {
   validateCoupon,
   getCoupons,
   deleteCoupon,
-} = require("../controllers/couponController");
-const { protect, admin } = require("../middleware/authMiddleware");
+} = require("./coupon.controller");
+const { protect, admin } = require("../../core/middleware/authMiddleware");
 
 router
   .route("/")

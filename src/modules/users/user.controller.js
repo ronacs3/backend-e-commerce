@@ -1,6 +1,6 @@
-const User = require("../models/userModel");
-const generateToken = require("../utils/generateToken");
-const sendEmail = require("../utils/sendEmail");
+const User = require("./user.model");
+const generateToken = require("../../core/utils/generateToken");
+const sendEmail = require("../../core/utils/sendEmail");
 const crypto = require("crypto");
 const asyncHandler = require("express-async-handler");
 

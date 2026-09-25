@@ -7,17 +7,17 @@ dotenv.config();
 
 const connectDB = require("./config/db");
 const cors = require("cors");
-const { notFound, errorHandler } = require("./middleware/errorMiddleware");
+const { notFound, errorHandler } = require("./core/middleware/errorMiddleware");
 
 // Import Routes
-const productRoutes = require("./routes/productRoutes");
-const userRoutes = require("./routes/userRoutes");
-const orderRoutes = require("./routes/orderRoutes");
-const categoryRoutes = require("./routes/categoryRoutes");
-const couponRoutes = require("./routes/couponRoutes");
-const uploadRoutes = require("./routes/uploadRoutes");
+const productRoutes = require("./modules/products/product.routes");
+const userRoutes = require("./modules/users/user.routes");
+const orderRoutes = require("./modules/orders/order.routes");
+const categoryRoutes = require("./modules/categories/category.routes");
+const couponRoutes = require("./modules/coupons/coupon.routes");
+const uploadRoutes = require("./modules/upload/upload.routes");
 // >>> THÊM DÒNG NÀY <<<
-const chatRoutes = require("./routes/chatRoutes");
+const chatRoutes = require("./modules/chat/chat.routes");
 
 // Swagger
 const swaggerUi = require("swagger-ui-express");

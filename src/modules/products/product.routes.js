@@ -10,8 +10,8 @@ const {
   createProductReview,
   getProductCategories,
   compareProductsAI, // <--- Đừng quên import hàm này (đã làm ở các bước trước)
-} = require("../controllers/productController");
-const { protect, admin } = require("../middleware/authMiddleware");
+} = require("./product.controller");
+const { protect, admin } = require("../../core/middleware/authMiddleware");
 
 // 1. Route gốc: Lấy tất cả & Tạo mới
 router.route("/").get(getProducts).post(protect, admin, createProduct); // Đã có protect (lấy req.user) và admin (check quyền)

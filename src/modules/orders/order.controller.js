@@ -1,8 +1,8 @@
-const Order = require("../models/orderModel");
-const Product = require("../models/productModel");
+const Order = require("./order.model");
+const Product = require("../products/product.model");
 const asyncHandler = require("express-async-handler");
-const Coupon = require("../models/couponModel");
-const sendEmail = require("../utils/sendEmail");
+const Coupon = require("../coupons/coupon.model");
+const sendEmail = require("../../core/utils/sendEmail");
 
 // @desc    Tạo đơn hàng mới (Full logic: Check kho, Tính giá, Coupon, Trừ kho)
 // @route   POST /api/orders

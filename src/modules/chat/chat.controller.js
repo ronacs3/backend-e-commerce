@@ -1,6 +1,6 @@
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 const dotenv = require("dotenv");
-const Product = require("../models/productModel"); // Import model sản phẩm
+const Product = require("../products/product.model"); // Import model sản phẩm
 
 dotenv.config();
 

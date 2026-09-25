@@ -6,10 +6,10 @@ const users = require("./data/users");
 const products = require("./data/products");
 const categories = require("./data/categories");
 
-const User = require("./models/userModel");
-const Product = require("./models/productModel");
-const Order = require("./models/orderModel");
-const Category = require("./models/categoryModel");
+const User = require("./modules/users/user.model");
+const Product = require("./modules/products/product.model");
+const Order = require("./modules/orders/order.model");
+const Category = require("./modules/categories/category.model");
 
 const connectDB = require("./config/db");
 

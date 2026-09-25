@@ -9,8 +9,8 @@ const {
   updateOrderToPaid,
   cancelOrder,
   getOrderStats,
-} = require("../controllers/orderController");
-const { protect, admin } = require("../middleware/authMiddleware");
+} = require("./order.controller");
+const { protect, admin } = require("../../core/middleware/authMiddleware");
 
 // 1. Route gốc (Tạo đơn, Lấy tất cả đơn)
 router.route("/").post(protect, addOrderItems).get(protect, admin, getOrders);

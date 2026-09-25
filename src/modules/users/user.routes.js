@@ -9,8 +9,8 @@ const {
   updateUserProfile,
   forgotPassword,
   resetPassword,
-} = require("../controllers/userController");
-const { protect, admin } = require("../middleware/authMiddleware");
+} = require("./user.controller");
+const { protect, admin } = require("../../core/middleware/authMiddleware");
 
 router.route("/").post(registerUser).get(protect, admin, getUsers); // Admin xem danh sách
 
