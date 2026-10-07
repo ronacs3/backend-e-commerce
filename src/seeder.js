@@ -1,84 +1,22 @@
-const mongoose = require("mongoose");
-const dotenv = require("dotenv");
-const colors = require("colors");
-
-const users = require("./data/users");
-const products = require("./data/products");
-const categories = require("./data/categories");
-
-const User = require("./modules/users/user.model");
-const Product = require("./modules/products/product.model");
-const Order = require("./modules/orders/order.model");
-const Category = require("./modules/categories/category.model");
-
-const connectDB = require("./config/db");
-
-dotenv.config();
-connectDB();
-
-/* ================= IMPORT DATA ================= */
-const importData = async () => {
+require('dotenv').config();
+const connectDB = require('./config/db');
+const { User, Product, Order, Category, Coupon } = require('./config/models');
+const users = require('./data/users');
+const products = require('./data/products');
+const categories = require('./data/categories');
+(async () => {
   try {
-    // 1. Clear data
-    await Order.deleteMany();
-    await Product.deleteMany();
-    await User.deleteMany();
-    await Category.deleteMany();
-
-    // 2. Create users (để chạy pre('save') hash password)
-    const createdUsers = [];
-    for (const user of users) {
-      const createdUser = await User.create(user);
-      createdUsers.push(createdUser);
-    }
-
-    const adminUser = createdUsers[0]._id;
-
-    // 3. Create categories
-    const createdCategories = await Category.insertMany(categories);
-
-    // Map category name -> ObjectId
-    const categoryMap = {};
-    createdCategories.forEach((cat) => {
-      categoryMap[cat.name] = cat.name;
+    await connectDB();
+    await connectDB.sequelize.transaction(async (transaction) => {
+      for (const Model of [Order, Product, Coupon, User, Category]) await Model.destroy({ where: {}, transaction });
+      if (process.argv[2] !== '-d') {
+        const createdUsers = [];
+        for (const user of users) createdUsers.push(await User.create(user, { transaction }));
+        await Category.bulkCreate(categories, { transaction, validate: true });
+        await Product.bulkCreate(products.map((product) => ({ ...product, user: createdUsers[0]._id })), { transaction, validate: true });
+      }
     });
-
-    // 4. Create products (map category string → ObjectId)
-    const sampleProducts = products.map((product) => ({
-      ...product,
-      user: adminUser,
-      category: categoryMap[product.category], // ⭐ FIX CHÍNH
-    }));
-
-    await Product.insertMany(sampleProducts);
-
-    console.log("✅ Data Imported Successfully!".green.inverse);
-    process.exit();
-  } catch (error) {
-    console.error(`❌ ${error}`.red.inverse);
-    process.exit(1);
-  }
-};
-
-/* ================= DESTROY DATA ================= */
-const destroyData = async () => {
-  try {
-    await Order.deleteMany();
-    await Product.deleteMany();
-    await User.deleteMany();
-    await Category.deleteMany();
-
-    console.log("🔥 Data Destroyed!".red.inverse);
-    process.exit();
-  } catch (error) {
-    console.error(`❌ ${error}`.red.inverse);
-    process.exit(1);
-  }
-};
-
-/* ================= RUN ================= */
-if (process.argv[2] === "-d") {
-  destroyData();
-} else {
-  importData();
-}
+    console.log(process.argv[2] === '-d' ? 'Data destroyed' : 'Data imported');
+  } catch (error) { console.error(error.message); process.exitCode = 1; }
+  finally { await connectDB.sequelize.close(); }
+})();

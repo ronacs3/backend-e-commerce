@@ -1,24 +1,4 @@
-const mongoose = require("mongoose");
-
-const categorySchema = mongoose.Schema(
-  {
-    name: {
-      type: String,
-      required: true,
-      unique: true, // Tên danh mục không được trùng
-    },
-    description: {
-      type: String,
-    },
-    // Nếu bạn muốn danh mục có ảnh đại diện
-    image: {
-      type: String,
-    },
-  },
-  {
-    timestamps: true,
-  }
-);
-
-const Category = mongoose.model("Category", categorySchema);
-module.exports = Category;
+const { defineModel, DataTypes, requiredString } = require('../../core/database/model');
+module.exports = defineModel('Category', {
+  name: { ...requiredString, unique: true }, description: DataTypes.TEXT, image: DataTypes.TEXT,
+}, { tableName: 'categories' });

@@ -1,3 +1,5 @@
+const { Op } = require('sequelize');
+const { randomBytes } = require('crypto');
 const asyncHandler = require("express-async-handler"); // Import cái này để bắt lỗi tự động
 const Product = require("./product.model");
 const Order = require("../orders/order.model");
@@ -13,8 +15,8 @@ const model = genAI.getGenerativeModel({
 // @route   GET /api/products/categories
 // @access  Public
 const getProductCategories = asyncHandler(async (req, res) => {
-  const categories = await Product.find().distinct("category");
-  res.json(categories);
+  const categories = await Product.findAll({ attributes: ['category'], group: ['category'], raw: true });
+  res.json(categories.map((row) => row.category));
 });
 
 // @desc    Lấy tất cả sản phẩm (Có tìm kiếm & Lọc danh mục)
@@ -26,33 +28,24 @@ const getProducts = asyncHandler(async (req, res) => {
 
   /* ===== KEYWORD ===== */
   if (req.query.keyword) {
-    query.name = {
-      $regex: req.query.keyword,
-      $options: "i",
-    };
+    query.name = { [Op.iLike]: '%' + req.query.keyword.replace(/[\\%_]/g, (character) => '\\' + character) + '%' };
   }
 
   /* ===== CATEGORY (NAME → ObjectId) ===== */
   if (req.query.category) {
-    const category = await Category.findOne({
-      name: req.query.category,
-    });
+    const category = await Category.findOne({ where: { name: req.query.category } });
 
-    if (category) {
-      query.category = category.name;
-    }
+    query.category = category ? category.name : req.query.category;
   }
 
   /* ===== PRICE ===== */
   if (req.query.min || req.query.max) {
     query.price = {};
-    if (req.query.min) query.price.$gte = Number(req.query.min);
-    if (req.query.max) query.price.$lte = Number(req.query.max);
+    if (req.query.min) query.price[Op.gte] = Number(req.query.min);
+    if (req.query.max) query.price[Op.lte] = Number(req.query.max);
   }
 
-  const products = await Product.find(query)
-    .populate("category", "name")
-    .sort({ createdAt: -1 });
+  const products = await Product.findAll({ where: query, order: [['createdAt', 'DESC']] });
 
   res.json(products);
 });
@@ -62,7 +55,7 @@ const getProducts = asyncHandler(async (req, res) => {
 const getProductById = asyncHandler(async (req, res) => {
   // Kiểm tra format ID của MongoDB để tránh lỗi CastError làm crash app
   if (req.params.id.match(/^[0-9a-fA-F]{24}$/)) {
-    const product = await Product.findById(req.params.id);
+    const product = await Product.findByPk(req.params.id);
     if (product) {
       res.json(product);
     } else {
@@ -79,10 +72,10 @@ const getProductById = asyncHandler(async (req, res) => {
 // @route   DELETE /api/products/:id
 // @access  Private/Admin
 const deleteProduct = asyncHandler(async (req, res) => {
-  const product = await Product.findById(req.params.id);
+  const product = await Product.findByPk(req.params.id);
 
   if (product) {
-    await Product.deleteOne({ _id: product._id });
+    await Product.destroy({ where: { _id: product._id } });
     res.json({ message: "Đã xóa sản phẩm" });
   } else {
     res.status(404);
@@ -102,7 +95,7 @@ const createProduct = asyncHandler(async (req, res) => {
 
   const { name, price, image, category, countInStock, description } = req.body;
 
-  const product = new Product({
+  const product = Product.build({
     name: name || "Tên sản phẩm mới",
     price: price || 0,
     user: req.user._id, // <-- Dòng này gây lỗi nếu req.user undefined
@@ -123,15 +116,15 @@ const createProduct = asyncHandler(async (req, res) => {
 const updateProduct = asyncHandler(async (req, res) => {
   const { name, price, description, image, category, countInStock } = req.body;
 
-  const product = await Product.findById(req.params.id);
+  const product = await Product.findByPk(req.params.id);
 
   if (product) {
     product.name = name || product.name;
-    product.price = price || product.price;
+    product.price = price ?? product.price;
     product.description = description || product.description;
     product.image = image || product.image;
     product.category = category || product.category;
-    product.countInStock = countInStock || product.countInStock;
+    product.countInStock = countInStock ?? product.countInStock;
 
     const updatedProduct = await product.save();
     res.json(updatedProduct);
@@ -145,13 +138,10 @@ const updateProduct = asyncHandler(async (req, res) => {
 // @route   GET /api/products/:id/related
 // @access  Public
 const getRelatedProducts = asyncHandler(async (req, res) => {
-  const product = await Product.findById(req.params.id);
+  const product = await Product.findByPk(req.params.id);
 
   if (product) {
-    const relatedProducts = await Product.find({
-      category: product.category,
-      _id: { $ne: product._id },
-    }).limit(4);
+    const relatedProducts = await Product.findAll({ where: { category: product.category, _id: { [Op.ne]: product._id } }, limit: 4 });
 
     res.json(relatedProducts);
   } else {
@@ -164,8 +154,8 @@ const getRelatedProducts = asyncHandler(async (req, res) => {
 // @route   POST /api/products/:id/reviews
 // @access  Private
 const createProductReview = asyncHandler(async (req, res) => {
-  const { rating, comment, user } = req.body;
-  const product = await Product.findById(req.params.id);
+  const { rating, comment } = req.body;
+  const product = await Product.findByPk(req.params.id);
 
   if (product) {
     // 1. Kiểm tra đã review chưa
@@ -177,13 +167,8 @@ const createProductReview = asyncHandler(async (req, res) => {
       res.status(400);
       throw new Error("Bạn đã đánh giá sản phẩm này rồi");
     }
-    console.log("req.user:", req.user);
     // 2. Kiểm tra đã mua hàng chưa
-    const hasPurchased = await Order.findOne({
-      user: user._id,
-      isPaid: true,
-      "orderItems.product": req.params.id,
-    });
+    const hasPurchased = await Order.findOne({ where: { user: req.user._id, isPaid: true, orderItems: { [Op.contains]: [{ product: req.params.id }] } } });
 
     if (!hasPurchased) {
       res.status(400);
@@ -200,7 +185,10 @@ const createProductReview = asyncHandler(async (req, res) => {
       user: req.user._id,
     };
 
-    product.reviews.push(review);
+    if (!Number.isInteger(Number(rating)) || Number(rating) < 1 || Number(rating) > 5 || typeof comment !== 'string' || !comment.trim()) {
+      res.status(400); throw new Error('Đánh giá không hợp lệ');
+    }
+    product.reviews = [...product.reviews, { ...review, _id: randomBytes(12).toString('hex'), createdAt: new Date(), updatedAt: new Date() }];
 
     product.numReviews = product.reviews.length;
     product.rating =

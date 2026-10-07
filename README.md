@@ -1,6 +1,6 @@
 # 🛒 E-Commerce Backend API
 
-Backend RESTful API cho hệ thống **Thương mại điện tử**, xây dựng bằng **Node.js**, **Express** và **MongoDB**.  
+Backend RESTful API cho hệ thống **Thương mại điện tử**, xây dựng bằng **Node.js**, **Express** và **PostgreSQL**.
 Dự án tập trung vào **tính an toàn dữ liệu**, **logic nghiệp vụ chặt chẽ** và **khả năng mở rộng**.
 
 ---
@@ -53,7 +53,7 @@ Dự án tập trung vào **tính an toàn dữ liệu**, **logic nghiệp vụ 
 
 - Node.js
 - Express.js
-- MongoDB (Mongoose)
+- PostgreSQL (Sequelize)
 - JWT, BCryptJS
 - Swagger
 
@@ -74,13 +74,18 @@ npm install
 ```env
 NODE_ENV=development
 PORT=5000
-MONGO_URI=your_mongodb_uri
+DB_HOST=localhost
+DB_PORT=5432
+DB_NAME=ecommerce
+DB_USER=postgres
+DB_PASSWORD=your_password
 JWT_SECRET=your_secret
 ```
 
 ### 3️⃣ Chạy server
 
 ```bash
+npm run db:setup
 npm run dev
 ```
 
@@ -110,3 +115,7 @@ backend/
 ## 🤝 Đóng góp
 
 Pull Request luôn được chào đón 👍
+
+
+
+PostgreSQL setup and existing-data migration: [docs/postgresql.md](docs/postgresql.md).

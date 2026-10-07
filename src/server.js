@@ -23,7 +23,6 @@ const chatRoutes = require("./modules/chat/chat.routes");
 const swaggerUi = require("swagger-ui-express");
 const swaggerSpecs = require("./config/swagger");
 
-connectDB();
 
 const app = express();
 
@@ -60,6 +59,9 @@ app.use(notFound);
 app.use(errorHandler);
 
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-});
+const start = async () => {
+  await connectDB();
+  return app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+};
+if (require.main === module) start().catch((error) => { console.error('Database startup failed:', error.message); process.exitCode = 1; });
+module.exports = { app, start };

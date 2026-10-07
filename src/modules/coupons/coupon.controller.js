@@ -8,7 +8,7 @@ const createCoupon = asyncHandler(async (req, res) => {
   // 1. Nhận thêm applicableCategories từ req.body
   const { code, discount, expirationDate, applicableCategories } = req.body;
 
-  const couponExists = await Coupon.findOne({ code });
+  const couponExists = await Coupon.findOne({ where: { code } });
   if (couponExists) {
     res.status(400);
     throw new Error("Mã giảm giá này đã tồn tại");
@@ -33,7 +33,7 @@ const validateCoupon = asyncHandler(async (req, res) => {
   // 1. Nhận thêm cartItems từ Frontend
   const { code, cartItems } = req.body;
 
-  const coupon = await Coupon.findOne({ code: code.toUpperCase() });
+  const coupon = await Coupon.findOne({ where: { code: code.toUpperCase() } });
 
   if (coupon && coupon.isActive) {
     // 2. Kiểm tra hết hạn
@@ -84,7 +84,7 @@ const validateCoupon = asyncHandler(async (req, res) => {
 // @route   GET /api/coupons
 // @access  Private/Admin
 const getCoupons = asyncHandler(async (req, res) => {
-  const coupons = await Coupon.find({}).sort({ createdAt: -1 }); // Mới nhất lên đầu
+  const coupons = await Coupon.findAll({ order: [['createdAt', 'DESC']] }); // Mới nhất lên đầu
   res.json(coupons);
 });
 
@@ -92,10 +92,10 @@ const getCoupons = asyncHandler(async (req, res) => {
 // @route   DELETE /api/coupons/:id
 // @access  Private/Admin
 const deleteCoupon = asyncHandler(async (req, res) => {
-  const coupon = await Coupon.findById(req.params.id);
+  const coupon = await Coupon.findByPk(req.params.id);
 
   if (coupon) {
-    await Coupon.deleteOne({ _id: coupon._id });
+    await Coupon.destroy({ where: { _id: coupon._id } });
     res.json({ message: "Đã xóa mã giảm giá" });
   } else {
     res.status(404);

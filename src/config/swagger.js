@@ -7,7 +7,7 @@ const options = {
       title: "E-Commerce API Documentation",
       version: "1.0.0",
       description:
-        "Tài liệu API đầy đủ cho dự án E-Commerce (Node.js, Express, MongoDB)",
+        "Tài liệu API đầy đủ cho dự án E-Commerce (Node.js, Express, PostgreSQL)",
       contact: {
         name: "Dev Team",
       },

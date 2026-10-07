@@ -1,3 +1,6 @@
+const { Op, QueryTypes } = require('sequelize');
+const { sequelize } = require('../../config/db');
+const User = require('../users/user.model');
 const Order = require("./order.model");
 const Product = require("../products/product.model");
 const asyncHandler = require("express-async-handler");
@@ -17,87 +20,44 @@ const addOrderItems = asyncHandler(async (req, res) => {
     couponCode,
   } = req.body;
 
-  if (orderItems && orderItems.length === 0) {
-    res.status(400);
-    throw new Error("Giỏ hàng trống");
-  } else {
-    // 1. Lấy thông tin Coupon (nếu có)
-    let coupon = null;
-    if (couponCode) {
-      coupon = await Coupon.findOne({
-        code: couponCode.toUpperCase(),
-        isActive: true,
-        expirationDate: { $gte: new Date() }, // Còn hạn
-      });
+  if (!Array.isArray(orderItems) || !orderItems.length) {
+    res.status(400); throw new Error('Giỏ hàng trống');
+  }
+  const quantities = new Map();
+  for (const item of orderItems) {
+    if (typeof item.product !== 'string' || !Number.isInteger(item.qty) || item.qty <= 0) {
+      res.status(400); throw new Error('Sản phẩm hoặc số lượng không hợp lệ');
     }
-
-    let dbItemsPrice = 0; // Tổng tiền hàng gốc
-    let totalDiscountAmount = 0; // Tổng tiền được giảm
-    const productsToUpdate = [];
-
-    // 2. DUYỆT QUA TỪNG SẢN PHẨM ĐỂ TÍNH TIỀN & GIẢM GIÁ
-    for (const item of orderItems) {
-      const product = await Product.findById(item.product);
-
-      if (!product) {
-        res.status(404);
-        throw new Error(`Sản phẩm không tồn tại`);
+    quantities.set(item.product, (quantities.get(item.product) || 0) + item.qty);
+  }
+  const shipping = Number(shippingPrice ?? 0), tax = Number(taxPrice ?? 0);
+  if (![shipping, tax].every((v) => Number.isFinite(v) && v >= 0)) {
+    res.status(400); throw new Error('Phí vận chuyển hoặc thuế không hợp lệ');
+  }
+  const createdOrder = await sequelize.transaction(async (transaction) => {
+    const coupon = couponCode ? await Coupon.findOne({ where: {
+      code: couponCode.toUpperCase(), isActive: true, expirationDate: { [Op.gte]: new Date() },
+    }, transaction }) : null;
+    let itemsPrice = 0, discount = 0;
+    const storedItems = [];
+    // Lock in a fixed order to prevent overselling and reduce deadlocks.
+    for (const [id, qty] of [...quantities.entries()].sort(([a], [b]) => a.localeCompare(b))) {
+      const product = await Product.findByPk(id, { transaction, lock: transaction.LOCK.UPDATE });
+      if (!product) { res.status(404); throw new Error('Sản phẩm không tồn tại'); }
+      if (product.countInStock < qty) { res.status(400); throw new Error('Sản phẩm không đủ tồn kho'); }
+      const lineTotal = product.price * qty;
+      itemsPrice += lineTotal;
+      if (coupon && (!coupon.applicableCategories.length || coupon.applicableCategories.includes(product.category))) {
+        discount += lineTotal * coupon.discount / 100;
       }
-
-      // Tính giá dòng sản phẩm này
-      const lineItemTotal = product.price * item.qty;
-      dbItemsPrice += lineItemTotal;
-
-      // --- LOGIC MỚI: TÍNH GIẢM GIÁ TRÊN TỪNG MÓN ---
-      if (coupon) {
-        // Điều kiện 1: Mã áp dụng cho tất cả (mảng rỗng)
-        const isGlobalCoupon = coupon.applicableCategories.length === 0;
-
-        // Điều kiện 2: Sản phẩm thuộc danh mục cho phép
-        const isCategoryMatch = coupon.applicableCategories.includes(
-          product.category
-        );
-
-        if (isGlobalCoupon || isCategoryMatch) {
-          // Tính số tiền giảm cho món này
-          const itemDiscount = (lineItemTotal * coupon.discount) / 100;
-          totalDiscountAmount += itemDiscount;
-        }
-      }
-      // ----------------------------------------------
-
-      productsToUpdate.push({ product, qty: item.qty });
+      storedItems.push({ product: product._id, name: product.name, image: product.image, price: product.price, qty });
+      product.countInStock -= qty;
+      await product.save({ transaction });
     }
-
-    // 3. Tính tổng cuối cùng
-    const finalTotalPrice =
-      dbItemsPrice +
-      Number(shippingPrice) +
-      Number(taxPrice) -
-      totalDiscountAmount;
-
-    // 4. Lưu đơn hàng
-    const order = new Order({
-      orderItems,
-      user: req.user._id,
-      shippingAddress,
-      paymentMethod,
-      itemsPrice: dbItemsPrice,
-      taxPrice,
-      shippingPrice,
-      totalPrice: finalTotalPrice,
-      isPaid: false,
-      isDelivered: false,
-    });
-
-    const createdOrder = await order.save();
-
-    // 5. Trừ tồn kho
-    for (const item of productsToUpdate) {
-      const product = item.product;
-      product.countInStock -= item.qty;
-      await product.save();
-    }
+    return Order.create({ user: req.user._id, orderItems: storedItems, shippingAddress, paymentMethod,
+      itemsPrice, taxPrice: tax, shippingPrice: shipping, totalPrice: itemsPrice + tax + shipping - discount,
+    }, { transaction });
+  });
     if (createdOrder) {
       // Tạo bảng danh sách sản phẩm bằng HTML
       const itemsHtml = createdOrder.orderItems
@@ -147,7 +107,6 @@ const addOrderItems = asyncHandler(async (req, res) => {
       }
     }
     res.status(201).json(createdOrder);
-  }
 });
 
 // @desc    Lấy tất cả đơn hàng
@@ -155,8 +114,8 @@ const addOrderItems = asyncHandler(async (req, res) => {
 // @access  Private/Admin
 const getOrders = async (req, res) => {
   // Lấy list order và populate thêm id và name của user mua hàng
-  const orders = await Order.find({}).populate("user", "id name");
-  res.json(orders);
+  const orders = await Order.findAll({ include: [{ model: User, as: 'buyer', attributes: ['_id', 'name'] }] });
+  res.json(orders.map((order) => { const value = order.get({ plain: true }); if (value.buyer) { value.user = value.buyer; delete value.buyer; } return value; }));
 };
 
 // @desc    Lấy chi tiết 1 đơn hàng theo ID
@@ -164,13 +123,10 @@ const getOrders = async (req, res) => {
 // @access  Private
 const getOrderById = async (req, res) => {
   // Populate lấy thêm tên và email của người mua từ bảng User
-  const order = await Order.findById(req.params.id).populate(
-    "user",
-    "name email"
-  );
+  const order = await Order.findByPk(req.params.id, { include: [{ model: User, as: 'buyer', attributes: ['_id', 'name', 'email'] }] });
 
   if (order) {
-    res.json(order);
+    const value = order.get({ plain: true }); value.user = value.buyer; delete value.buyer; res.json(value);
   } else {
     res.status(404);
     throw new Error("Không tìm thấy đơn hàng");
@@ -186,7 +142,7 @@ const getMyOrders = asyncHandler(async (req, res) => {
     throw new Error("Chưa đăng nhập");
   }
 
-  const orders = await Order.find({ user: req.user._id });
+  const orders = await Order.findAll({ where: { user: req.user._id } });
   res.json(orders);
 });
 
@@ -194,19 +150,19 @@ const getMyOrders = asyncHandler(async (req, res) => {
 // @route   PUT /api/orders/:id/deliver
 // @access  Private/Admin
 const updateOrderToDelivered = async (req, res) => {
-  const order = await Order.findById(req.params.id);
+  const order = await Order.findByPk(req.params.id);
 
   if (order) {
     order.isDelivered = true;
-    order.deliveredAt = Date.now();
+    order.deliveredAt = new Date();
 
     const updatedOrder = await order.save();
     // --- GỬI MAIL THÔNG BÁO GIAO HÀNG ---
     try {
       await sendEmail({
-        email: order.user.email,
+        email: (await User.findByPk(order.user)).email,
         subject: `Đơn hàng #${order._id} đã được giao thành công`,
-        html: `<h3>Xin chào ${order.user.name},</h3>
+        html: `<h3>Xin chào ${(await User.findByPk(order.user)).name},</h3>
                  <p>Đơn hàng <strong>${order._id}</strong> của bạn đã được giao thành công.</p>
                  <p>Hãy đánh giá sản phẩm để nhận ưu đãi cho lần mua tiếp theo nhé!</p>`,
       });
@@ -225,11 +181,11 @@ const updateOrderToDelivered = async (req, res) => {
 // @route   PUT /api/orders/:id/pay
 // @access  Private/Admin
 const updateOrderToPaid = async (req, res) => {
-  const order = await Order.findById(req.params.id);
+  const order = await Order.findByPk(req.params.id);
 
   if (order) {
     order.isPaid = true;
-    order.paidAt = Date.now();
+    order.paidAt = new Date();
 
     // Ghi chú lại là Admin đã xác nhận
     order.paymentResult = {
@@ -251,102 +207,40 @@ const updateOrderToPaid = async (req, res) => {
 // @route   PUT /api/orders/:id/cancel
 // @access  Private
 const cancelOrder = async (req, res) => {
-  const order = await Order.findById(req.params.id);
-
-  if (!order) {
-    res.status(404);
-    throw new Error("Đơn hàng không tồn tại");
-  }
-
-  // --- KIỂM TRA QUYỀN SỞ HỮU ---
-  // Nếu không phải Admin VÀ cũng không phải chủ đơn hàng -> Chặn
-  if (!req.user.isAdmin && order.user.toString() !== req.user._id.toString()) {
-    res.status(401);
-    throw new Error("Bạn không có quyền hủy đơn hàng này");
-  }
-  // -----------------------------
-
-  if (order.isDelivered) {
-    res.status(400);
-    throw new Error("Đơn hàng đang giao hoặc đã giao, không thể hủy!");
-  }
-
-  if (order.isCancelled) {
-    res.status(400);
-    throw new Error("Đơn hàng này đã hủy rồi!");
-  }
-
-  // Cập nhật trạng thái
-  order.isCancelled = true;
-  order.cancelledAt = Date.now(); // Ghi lại thời gian hủy
-  const updatedOrder = await order.save();
-
-  // HOÀN LẠI TỒN KHO (RESTOCK)
-  for (const item of order.orderItems) {
-    const product = await Product.findById(item.product);
-    if (product) {
-      product.countInStock += item.qty;
-      await product.save();
+  const updatedOrder = await sequelize.transaction(async (transaction) => {
+    const order = await Order.findByPk(req.params.id, { transaction, lock: transaction.LOCK.UPDATE });
+    if (!order) { res.status(404); throw new Error('Đơn hàng không tồn tại'); }
+    if (!req.user.isAdmin && order.user !== req.user._id) {
+      res.status(401); throw new Error('Bạn không có quyền hủy đơn hàng này');
     }
-  }
-
-  res.json({ message: "Đã hủy đơn hàng", order: updatedOrder });
+    if (order.isDelivered || order.isCancelled) { res.status(400); throw new Error('Đơn hàng không thể hủy'); }
+    for (const item of [...order.orderItems].sort((a, b) => a.product.localeCompare(b.product))) {
+      const product = await Product.findByPk(item.product, { transaction, lock: transaction.LOCK.UPDATE });
+      if (product) { product.countInStock += item.qty; await product.save({ transaction }); }
+    }
+    order.isCancelled = true; order.cancelledAt = new Date();
+    return order.save({ transaction });
+  });
+  res.json({ message: 'Đã hủy đơn hàng', order: updatedOrder });
 };
 
-// @desc    Lấy thống kê Dashboard (Admin)
-// @route   GET /api/orders/stats
-// @access  Private/Admin
 const getOrderStats = asyncHandler(async (req, res) => {
-  // 1. THỐNG KÊ DOANH THU 7 NGÀY GẦN NHẤT
-  const last7Days = new Date();
-  last7Days.setDate(last7Days.getDate() - 7);
-
-  const dailyOrders = await Order.aggregate([
-    { $match: { createdAt: { $gte: last7Days } } }, // Lọc đơn 7 ngày qua
-    {
-      $group: {
-        _id: { $dateToString: { format: "%Y-%m-%d", date: "$createdAt" } },
-        totalSales: { $sum: "$totalPrice" },
-        count: { $sum: 1 },
-      },
-    },
-    { $sort: { _id: 1 } }, // Sắp xếp theo ngày tăng dần
-  ]);
-
-  // 2. TỶ LỆ TRẠNG THÁI ĐƠN HÀNG (Đã thanh toán / Chưa thanh toán)
-  const statusStats = await Order.aggregate([
-    {
-      $group: {
-        _id: "$isPaid",
-        count: { $sum: 1 },
-      },
-    },
-  ]);
-
-  // 3. TOP 5 SẢN PHẨM BÁN CHẠY
-  const topProducts = await Order.aggregate([
-    { $unwind: "$orderItems" }, // Tách mảng orderItems ra từng dòng
-    {
-      $group: {
-        _id: "$orderItems.product",
-        name: { $first: "$orderItems.name" },
-        totalQty: { $sum: "$orderItems.qty" },
-      },
-    },
-    { $sort: { totalQty: -1 } }, // Sắp xếp giảm dần theo số lượng
-    { $limit: 5 }, // Lấy 5 sp đầu
-  ]);
+  const last7Days = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  const dailyOrders = await sequelize.query(
+    `SELECT to_char("createdAt" AT TIME ZONE 'UTC', 'YYYY-MM-DD') AS "_id",
+      SUM("totalPrice")::float8 AS "totalSales", COUNT(*)::int AS "count"
+      FROM orders WHERE "createdAt" >= :since GROUP BY 1 ORDER BY 1`,
+    { replacements: { since: last7Days }, type: QueryTypes.SELECT });
+  const statusStats = await sequelize.query(
+    'SELECT "isPaid" AS "_id", COUNT(*)::int AS "count" FROM orders GROUP BY "isPaid"',
+    { type: QueryTypes.SELECT });
+  const topProducts = await sequelize.query(
+    `SELECT item->>'product' AS "_id", MIN(item->>'name') AS "name",
+      SUM((item->>'qty')::int)::int AS "totalQty"
+      FROM orders CROSS JOIN LATERAL jsonb_array_elements("orderItems") AS item
+      GROUP BY item->>'product' ORDER BY "totalQty" DESC LIMIT 5`,
+    { type: QueryTypes.SELECT });
 
   res.json({ dailyOrders, statusStats, topProducts });
 });
-
-module.exports = {
-  addOrderItems,
-  getOrders,
-  getMyOrders,
-  updateOrderToDelivered,
-  getOrderById,
-  updateOrderToPaid,
-  cancelOrder,
-  getOrderStats,
-};
+module.exports = { addOrderItems, getOrders, getMyOrders, updateOrderToDelivered, getOrderById, updateOrderToPaid, cancelOrder, getOrderStats };

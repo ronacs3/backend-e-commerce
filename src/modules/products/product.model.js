@@ -1,38 +1,11 @@
-const mongoose = require("mongoose");
-
-// Schema con cho Review
-const reviewSchema = mongoose.Schema(
-  {
-    name: { type: String, required: true },
-    rating: { type: Number, required: true },
-    comment: { type: String, required: true },
-    user: {
-      type: mongoose.Schema.Types.ObjectId,
-      required: true,
-      ref: "User",
-    },
-  },
-  { timestamps: true }
-);
-
-const productSchema = mongoose.Schema(
-  {
-    user: { type: mongoose.Schema.Types.ObjectId, required: true, ref: "User" },
-    name: { type: String, required: true },
-    image: { type: String, required: true },
-    category: { type: String, required: true },
-    description: { type: String, required: true },
-    // Mảng chứa các review
-    reviews: [reviewSchema],
-    // Điểm trung bình (ví dụ: 4.5)
-    rating: { type: Number, required: true, default: 0 },
-    // Số lượng đánh giá (ví dụ: 10)
-    numReviews: { type: Number, required: true, default: 0 },
-    price: { type: Number, required: true, default: 0 },
-    countInStock: { type: Number, required: true, default: 0 },
-  },
-  { timestamps: true }
-);
-
-const Product = mongoose.model("Product", productSchema);
-module.exports = Product;
+const { defineModel, DataTypes, requiredString, moneyField } = require('../../core/database/model');
+const User = require('../users/user.model');
+module.exports = defineModel('Product', {
+  user: { type: DataTypes.STRING(24), allowNull: false, references: { model: User, key: '_id' }, onDelete: 'RESTRICT' },
+  name: requiredString, image: requiredString, category: requiredString, description: requiredString,
+  reviews: { type: DataTypes.JSONB, allowNull: false, defaultValue: [] },
+  rating: { type: DataTypes.DOUBLE, allowNull: false, defaultValue: 0 },
+  numReviews: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
+  price: { ...moneyField('price'), validate: { min: 0 } },
+  countInStock: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0, validate: { min: 0 } },
+}, { tableName: 'products', indexes: [{ fields: ['category'] }] });

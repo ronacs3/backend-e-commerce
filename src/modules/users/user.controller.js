@@ -1,3 +1,4 @@
+const { Op } = require('sequelize');
 const User = require("./user.model");
 const generateToken = require("../../core/utils/generateToken");
 const sendEmail = require("../../core/utils/sendEmail");
@@ -9,7 +10,7 @@ const asyncHandler = require("express-async-handler");
 const registerUser = async (req, res) => {
   const { name, email, password } = req.body;
 
-  const userExists = await User.findOne({ email });
+  const userExists = await User.findOne({ where: { email } });
 
   if (userExists) {
     return res.status(400).json({ message: "Email đã tồn tại" });
@@ -51,7 +52,7 @@ const registerUser = async (req, res) => {
 const authUser = async (req, res) => {
   const { email, password } = req.body;
 
-  const user = await User.findOne({ email });
+  const user = await User.findOne({ where: { email } });
 
   // Kiểm tra email và mật khẩu
   if (user && (await user.matchPassword(password))) {
@@ -71,7 +72,7 @@ const authUser = async (req, res) => {
 // @route   GET /api/users/profile
 const getUserProfile = async (req, res) => {
   // req.user đã có nhờ middleware 'protect'
-  const user = await User.findById(req.user._id);
+  const user = await User.findByPk(req.user._id);
 
   if (user) {
     res.json({
@@ -88,7 +89,7 @@ const getUserProfile = async (req, res) => {
 // @route   GET /api/users
 // @access  Private/Admin
 const getUsers = async (req, res) => {
-  const users = await User.find({});
+  const users = await User.findAll({ attributes: { exclude: ['password', 'resetPasswordToken', 'resetPasswordExpire'] } });
   res.json(users);
 };
 
@@ -96,14 +97,14 @@ const getUsers = async (req, res) => {
 // @route   DELETE /api/users/:id
 // @access  Private/Admin
 const deleteUser = async (req, res) => {
-  const user = await User.findById(req.params.id);
+  const user = await User.findByPk(req.params.id);
 
   if (user) {
     if (user.isAdmin) {
       res.status(400);
       throw new Error("Không thể xóa tài khoản Admin"); // Bảo vệ Admin không bị xóa
     }
-    await User.deleteOne({ _id: user._id });
+    await User.destroy({ where: { _id: user._id } });
     res.json({ message: "Đã xóa người dùng" });
   } else {
     res.status(404).json({ message: "Không tìm thấy người dùng" });
@@ -114,7 +115,7 @@ const deleteUser = async (req, res) => {
 // @route   PUT /api/users/profile
 // @access  Private
 const updateUserProfile = async (req, res) => {
-  const user = await User.findById(req.user._id);
+  const user = await User.findByPk(req.user._id);
 
   if (user) {
     user.name = req.body.name || user.name;
@@ -146,7 +147,7 @@ const updateUserProfile = async (req, res) => {
 // @access  Public
 const forgotPassword = asyncHandler(async (req, res) => {
   const { email } = req.body;
-  const user = await User.findOne({ email });
+  const user = await User.findOne({ where: { email } });
 
   if (!user) {
     res.status(404);
@@ -161,7 +162,7 @@ const forgotPassword = asyncHandler(async (req, res) => {
     .createHash("sha256")
     .update(resetToken)
     .digest("hex");
-  user.resetPasswordExpire = Date.now() + 10 * 60 * 1000; // Hết hạn sau 10 phút
+  user.resetPasswordExpire = new Date(Date.now() + 10 * 60 * 1000); // Hết hạn sau 10 phút
 
   await user.save();
 
@@ -185,8 +186,8 @@ const forgotPassword = asyncHandler(async (req, res) => {
 
     res.json({ success: true, data: "Đã gửi email hướng dẫn!" });
   } catch (error) {
-    user.resetPasswordToken = undefined;
-    user.resetPasswordExpire = undefined;
+    user.resetPasswordToken = null;
+    user.resetPasswordExpire = null;
     await user.save();
     res.status(500);
     throw new Error("Không thể gửi email");
@@ -204,10 +205,10 @@ const resetPassword = asyncHandler(async (req, res) => {
     .digest("hex");
 
   // 2. Tìm user có token đó và chưa hết hạn
-  const user = await User.findOne({
+  const user = await User.findOne({ where: {
     resetPasswordToken,
-    resetPasswordExpire: { $gt: Date.now() },
-  });
+    resetPasswordExpire: { [Op.gt]: new Date() },
+  } });
 
   if (!user) {
     res.status(400);
@@ -218,8 +219,8 @@ const resetPassword = asyncHandler(async (req, res) => {
   user.password = req.body.password;
 
   // 4. Xóa token reset đi
-  user.resetPasswordToken = undefined;
-  user.resetPasswordExpire = undefined;
+  user.resetPasswordToken = null;
+  user.resetPasswordExpire = null;
 
   // 5. Lưu lại (Middleware pre-save sẽ tự hash password mới)
   await user.save();

@@ -8,7 +8,7 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 const SYSTEM_INSTRUCTION = `
 Bạn là trợ lý ảo TechShop.
-NHIỆM VỤ: Chỉ tư vấn công nghệ, giọng điệu thân thiện. 
+NHIỆM VỤ: Chỉ tư vấn công nghệ, giọng điệu thân thiện.
 Tuyệt đối từ chối các câu hỏi không liên quan.
 `;
 
@@ -24,9 +24,7 @@ const chatWithAI = async (req, res) => {
     if (!message) return res.status(400).send("Thiếu nội dung");
 
     // 1. Lấy dữ liệu sản phẩm (giữ nguyên logic cũ)
-    const products = await Product.find({})
-      .select("name price countInStock")
-      .limit(5);
+    const products = await Product.findAll({ attributes: ['name', 'price', 'countInStock'], limit: 5 });
     const productContext = products
       .map((p) => `- ${p.name}: ${p.price}đ`)
       .join("\n");

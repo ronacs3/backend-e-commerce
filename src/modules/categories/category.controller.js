@@ -7,7 +7,7 @@ const Product = require("../products/product.model");
 const createCategory = async (req, res) => {
   const { name, description, image } = req.body;
 
-  const categoryExists = await Category.findOne({ name });
+  const categoryExists = await Category.findOne({ where: { name } });
   if (categoryExists) {
     res.status(400);
     throw new Error("Danh mục đã tồn tại");
@@ -21,7 +21,7 @@ const createCategory = async (req, res) => {
 // @route   GET /api/categories
 // @access  Public
 const getCategories = async (req, res) => {
-  const categories = await Category.find().sort({ name: 1 });
+  const categories = await Category.findAll({ order: [['name', 'ASC']] });
   res.json(categories);
 };
 
@@ -29,7 +29,7 @@ const getCategories = async (req, res) => {
 // @route   PUT /api/categories/:id
 // @access  Private/Admin
 const updateCategory = async (req, res) => {
-  const category = await Category.findById(req.params.id);
+  const category = await Category.findByPk(req.params.id);
 
   if (category) {
     category.name = req.body.name || category.name;
@@ -48,20 +48,20 @@ const updateCategory = async (req, res) => {
 // @route   DELETE /api/categories/:id
 // @access  Private/Admin
 const deleteCategory = async (req, res) => {
-  const category = await Category.findById(req.params.id);
+  const category = await Category.findByPk(req.params.id);
 
   if (category) {
     // Kiểm tra xem có sản phẩm nào đang dùng danh mục này không?
     // Lưu ý: Hiện tại Product.category của bạn đang lưu String (tên).
     // Nếu sau này đổi sang lưu ID, bạn sửa query bên dưới thành { category: category._id }
-    const productsUsing = await Product.findOne({ category: category.name });
+    const productsUsing = await Product.findOne({ where: { category: category.name } });
 
     if (productsUsing) {
       res.status(400);
       throw new Error("Không thể xóa! Có sản phẩm đang thuộc danh mục này.");
     }
 
-    await Category.deleteOne({ _id: category._id });
+    await Category.destroy({ where: { _id: category._id } });
     res.json({ message: "Đã xóa danh mục" });
   } else {
     res.status(404);
@@ -73,7 +73,7 @@ const deleteCategory = async (req, res) => {
 // @route   GET /api/categories/:id
 // @access  Public
 const getCategoryDetails = async (req, res) => {
-  const category = await Category.findById(req.params.id);
+  const category = await Category.findByPk(req.params.id);
 
   if (!category) {
     res.status(404);
@@ -82,10 +82,10 @@ const getCategoryDetails = async (req, res) => {
 
   // Tìm các sản phẩm có category trùng tên với category này
   // (Logic này dựa trên việc Product đang lưu tên category dạng string)
-  const products = await Product.find({ category: category.name });
+  const products = await Product.findAll({ where: { category: category.name } });
 
   res.json({
-    ...category._doc,
+    ...category.get({ plain: true }),
     products: products, // Trả về thông tin danh mục + list sản phẩm
   });
 };

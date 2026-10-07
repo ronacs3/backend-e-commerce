@@ -24,7 +24,7 @@ const protect = async (req, res, next) => {
       const decoded = jwt.verify(token, process.env.JWT_SECRET); // Giải mã token
 
       // Tìm user tương ứng với token và gắn vào req.user (trừ field password)
-      req.user = await User.findById(decoded.id).select("-password");
+      req.user = await User.findByPk(decoded.id, { attributes: { exclude: ['password', 'resetPasswordToken', 'resetPasswordExpire'] } });
 
       next(); // Cho phép đi tiếp
     } catch (error) {
