@@ -23,21 +23,58 @@ const chatRoutes = require("./modules/chat/chat.routes");
 const swaggerUi = require("swagger-ui-express");
 const swaggerSpecs = require("./config/swagger");
 
-connectDB();
+// Kết nối DB cho môi trường local
+if (!process.env.VERCEL) {
+  connectDB();
+}
 
 const app = express();
 
+// Middleware đảm bảo kết nối DB trước khi xử lý API (cần thiết cho Vercel Serverless)
+app.use(async (req, res, next) => {
+  try {
+    await connectDB();
+    next();
+  } catch (err) {
+    return res.status(500).json({
+      message: "Lỗi kết nối cơ sở dữ liệu (Database connection failed)",
+      error: err.message,
+      hint: "Hãy kiểm tra biến môi trường MONGO_URI trên Vercel và cấu hình Network Access (0.0.0.0/0) trên MongoDB Atlas.",
+    });
+  }
+});
+
+const allowedOrigins = [
+  "http://localhost:3000",
+  "http://localhost:5000",
+  "https://techshopnibi.name.vn",
+];
+if (process.env.FRONTEND_URL) {
+  allowedOrigins.push(process.env.FRONTEND_URL);
+}
+
 app.use(
   cors({
-    origin: [
-      "http://localhost:3000",
-      "http://localhost:5000",
-      "https://techshopnibi.name.vn", // <--- THÊM DÒNG NÀY
-    ],
+    origin: (origin, callback) => {
+      // Cho phép nếu không có origin (Postman, mobile, same-origin) hoặc origin nằm trong danh sách hoặc domain vercel
+      if (!origin || allowedOrigins.includes(origin) || origin.endsWith(".vercel.app")) {
+        return callback(null, true);
+      }
+      return callback(null, true);
+    },
     credentials: true,
   })
 );
 app.use(express.json());
+
+// Trang chủ API
+app.get("/", (req, res) => {
+  res.json({
+    status: "success",
+    message: "TechShop E-commerce API is running!",
+    docs: "/api-docs",
+  });
+});
 
 // 2. Routes
 app.use("/api/products", productRoutes);
@@ -49,8 +86,15 @@ app.use("/api/upload", uploadRoutes);
 // >>> GẮN ROUTE CHAT VÀO ĐÂY <<<
 app.use("/api/chat", chatRoutes);
 
-// Swagger Docs
-app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpecs));
+// Swagger Docs (kèm CDN CSS/JS để hoạt động tốt trên Vercel)
+const swaggerOptions = {
+  customCssUrl: "https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/5.0.0/swagger-ui.min.css",
+  customJs: [
+    "https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/5.0.0/swagger-ui-bundle.js",
+    "https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/5.0.0/swagger-ui-standalone-preset.js",
+  ],
+};
+app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpecs, swaggerOptions));
 
 // Static folder
 app.use("/uploads", express.static(path.join(path.resolve(), "/uploads")));
@@ -60,6 +104,10 @@ app.use(notFound);
 app.use(errorHandler);
 
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-});
+if (!process.env.VERCEL) {
+  app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+  });
+}
+
+module.exports = app;

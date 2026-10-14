@@ -3,6 +3,7 @@ const express = require("express");
 const multer = require("multer");
 const cloudinary = require("cloudinary").v2;
 const fs = require("fs");
+const os = require("os");
 
 const router = express.Router();
 
@@ -13,10 +14,14 @@ cloudinary.config({
   api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
-// 2. Cấu hình Multer (Lưu tạm vào thư mục uploads/)
+// 2. Cấu hình Multer (Lưu tạm vào os.tmpdir() trên Vercel hoặc uploads/ ở local)
 const storage = multer.diskStorage({
   destination(req, file, cb) {
-    cb(null, "uploads/"); // Đảm bảo bạn đã tạo thư mục này ở root
+    const uploadDir = process.env.VERCEL ? os.tmpdir() : "uploads/";
+    if (!process.env.VERCEL && !fs.existsSync(uploadDir)) {
+      fs.mkdirSync(uploadDir, { recursive: true });
+    }
+    cb(null, uploadDir);
   },
   filename(req, file, cb) {
     cb(
